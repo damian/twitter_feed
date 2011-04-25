@@ -26,7 +26,6 @@ function twitter_feed_permission() {
   );
 }
 
-
 function twitter_feed_admin_form($form_state) {
   $form = array();
 
@@ -118,11 +117,11 @@ function retrieve_twitter_feed_content() {
     ->range(0, $feed_count);
 
   if (variable_get('twitter_feed_include_replies')) {
-    $query->condition('reply', 0,'=');
+    $query->condition('reply', 0, '=');
   }
   $result = $query->execute();
   $tweets = array();
-  while($record = $result->fetchAssoc()) {
+  while ($record = $result->fetchAssoc()) {
     $tweets[] = theme('twitter_feed_tweet', array('tweet' => $record['text']));
   }
   return theme('twitter_feed', array('tweets' => implode($tweets)));
