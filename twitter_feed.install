@@ -1,0 +1,52 @@
+<?php
+
+/**
+ * Implementation of hook_schema()
+ */
+function twitter_feed_schema() {
+  $schema = array();
+  $schema['twitter_feed'] = array(
+    'description' => 'A table hold the users Twitter feed',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The primary key',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE
+      ),
+      'text' => array(
+        'description' => 'A tweet',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => ''
+      ),
+      'created_at' => array(
+        'description' => 'DateTime the tweet was created',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0
+      ),
+      'reply' => array(
+        'description' => 'Boolean indicating whether the tweet is a reply',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0
+      )
+    ),
+    'primary key' => array('id'),
+  );
+  return $schema;
+}
+
+
+/**
+ *  Implementation of hook_uninstall()
+ */
+function twitter_feed_uninstall() {
+  variable_del('twitter_feed_username');
+  variable_del('twitter_feed_count');
+  variable_del('twitter_feed_include_links');
+  variable_del('twitter_feed_include_replies');
+  db_drop_table('twitter_feed');
+}

@@ -1,0 +1,193 @@
+<?php
+
+/**
+ * Implementation of hook_menu()
+ */
+function twitter_feed_menu() {
+  $items = array();
+  $items['admin/config/services/twitter_feed'] = array(
+    'title' => 'Configure Twitter Feed Block',
+    'description' => 'Configure Twitter feed block.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('twitter_feed_admin_form'),
+    'access arguments' => array('twitter_feed_permission')
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_permission()
+ */
+function twitter_feed_permission() {
+  return array(
+    'administer twitter blocks' => array(
+      'title' => t('Administer Twitter Feed Block')
+    ),
+  );
+}
+
+
+function twitter_feed_admin_form($form_state) {
+  $form = array();
+
+  $form['username'] = array(
+    '#type' => 'textfield', 
+    '#title' => t('Twitter username'), 
+    '#size' => 32,
+    '#default_value' => variable_get('twitter_feed_username'),
+    '#required' => TRUE
+  );
+
+  $form['number_of_tweets'] = array(
+    '#type' => 'textfield', 
+    '#title' => t('Number of tweets to return'), 
+    '#size' => 12, 
+    '#default_value' => variable_get('twitter_feed_count'),
+    '#required' => TRUE
+  );
+
+  $form['include_links'] = array(
+    '#type' => 'checkbox', 
+    '#title' => t('Links, hashtags and users get linked to automatically'),
+    '#default_value' => variable_get('twitter_feed_include_links')
+  );
+
+  $form['include_replies'] = array(
+    '#type' => 'checkbox', 
+    '#title' => t('Dont include @replies in your feed'),
+    '#default_value' => variable_get('twitter_feed_include_replies')
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+
+  return $form;
+}
+
+function twitter_feed_admin_form_validate($form, $form_state) {
+  $number_of_tweets = $form_state['values']['number_of_tweets'];
+  if (!is_numeric($number_of_tweets) || $number_of_tweets <= 0 || $number_of_tweets > 30) {
+    form_set_error('number_of_tweets', t('Not a valid number'));
+  }
+}
+
+function twitter_feed_admin_form_submit($form, &$form_state) {
+  $old_username = variable_get('twitter_feed_username');
+  $username_changed = $old_username != $form_state['values']['username'];
+
+  variable_set('twitter_feed_username', $form_state['values']['username']);
+  variable_set('twitter_feed_count', $form_state['values']['number_of_tweets']);
+  variable_set('twitter_feed_include_links', $form_state['values']['include_links']);
+  variable_set('twitter_feed_include_replies', $form_state['values']['include_replies']);
+  drupal_set_message(t('Your Twitter settings have been saved.'));
+  if ($username_changed) {
+    db_truncate('twitter_feed')->execute();
+    retrieve_twitter_feed();
+  }
+}
+
+/**
+ * Implementation of hook_cron()
+ */
+function twitter_feed_cron() {
+  retrieve_twitter_feed();
+}
+
+function retrieve_twitter_feed() {
+  $username = variable_get('twitter_feed_username');
+  if (!empty($username)) {
+    $expires = variable_get('twitter_feed_cron_last_run');
+    $url = 'http://api.twitter.com/1/statuses/user_timeline.json?screen_name=' . $username;
+    $feed = json_decode(file_get_contents($url));
+
+    foreach ($feed as $key => $tweet) {
+      $fields = array('text' => $tweet->text, 'created_at' => strtotime($tweet->created_at), 'reply' => is_null($tweet->in_reply_to_user_id) ? 0 : 1);
+      db_insert('twitter_feed')->fields($fields)->execute();
+    }
+  }
+}
+
+function retrieve_twitter_feed_content() {
+
+  $feed_count = variable_get('twitter_feed_count', 5);
+  $query = db_select('twitter_feed', 'f')
+    ->fields('f')
+    ->orderBy('created_at', 'DESC')
+    ->range(0, $feed_count);
+
+  if (variable_get('twitter_feed_include_replies')) {
+    $query->condition('reply', 0,'=');
+  }
+  $result = $query->execute();
+  $tweets = array();
+  while($record = $result->fetchAssoc()) {
+    $tweets[] = theme('twitter_feed_tweet', array('tweet' => $record['text']));
+  }
+  return theme('twitter_feed', array('tweets' => implode($tweets)));
+}
+
+/**
+ * Implementation of hook_block_info()
+ */
+function twitter_feed_block_info() {
+  $blocks = array();
+  $blocks['info'] = array(
+    'info' => t('Twitter feed block')
+  );
+  return $blocks;
+}
+
+/**
+ * Implementation of hook_block_view()
+ */
+function twitter_feed_block_view($delta = '') {
+  $block = array();
+  $block['subject'] = t('Twitter feed block');
+  $block['content'] = retrieve_twitter_feed_content();
+  return $block;
+}
+
+/**
+ * Implementation of hook_theme()
+ */
+function twitter_feed_theme($existing, $type, $theme, $path) {
+  return array(
+    'twitter_feed' => array('variables' => array()),
+    'twitter_feed_tweet' => array('variables' => array()),
+  );
+}
+
+function theme_twitter_feed($tweets, $variables = array()) {
+  return '<ul>' . $tweets['tweets'] . '</ul>';
+}
+
+function theme_twitter_feed_tweet($tweet, $variables = array()) {
+  if (variable_get('twitter_feed_include_links')) {
+    $tweet['tweet'] = twitter_feed_autolink($tweet['tweet']);
+  }
+  return '<li>' . $tweet['tweet'] . '</li>';
+}
+
+function twitter_feed_autolink($status_text) {
+  $status_text = preg_replace(
+    '/(https?:\/\/\S+)/',
+    '<a target="_blank" href="\1">\1</a>',
+    $status_text
+  );
+
+  $status_text = preg_replace(
+    '/(^|\s)@(\w+)/',
+    '\1<a target="_blank" href="http://twitter.com/\2">@\2</a>',
+    $status_text
+  );
+
+  $status_text = preg_replace(
+    '/\B#(\w*[a-zA-Z]+\w*)/',
+    '<a target="_blank" href="http://search.twitter.com/search?q=%23\1">#\1</a>',
+    $status_text
+  );
+  return $status_text;
+}
+
