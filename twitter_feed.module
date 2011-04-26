@@ -83,7 +83,7 @@ function twitter_feed_admin_form_submit($form, &$form_state) {
   drupal_set_message(t('Your Twitter settings have been saved.'));
   if ($username_changed) {
     db_truncate('twitter_feed')->execute();
-    retrieve_twitter_feed();
+    retrieve_twitter_feed(true);
   }
 }
 
@@ -94,17 +94,23 @@ function twitter_feed_cron() {
   retrieve_twitter_feed();
 }
 
-function retrieve_twitter_feed() {
+function retrieve_twitter_feed($new_feed = false) {
   $username = variable_get('twitter_feed_username');
   if (!empty($username)) {
-    $expires = variable_get('twitter_feed_cron_last_run');
+    $expires = intval(variable_get('twitter_feed_cron_last_run'));
     $url = 'http://api.twitter.com/1/statuses/user_timeline.json?screen_name=' . $username;
     $feed = json_decode(file_get_contents($url));
+    $current_time = time();
 
     foreach ($feed as $key => $tweet) {
-      $fields = array('text' => $tweet->text, 'created_at' => strtotime($tweet->created_at), 'reply' => is_null($tweet->in_reply_to_user_id) ? 0 : 1);
-      db_insert('twitter_feed')->fields($fields)->execute();
+      $created_at = intval(strtotime($tweet->created_at));
+      if ($created_at > $expires || is_null($expires) || $new_feed) {
+        $fields = array('text' => $tweet->text, 'created_at' => $created_at, 'reply' => is_null($tweet->in_reply_to_user_id) ? 0 : 1);
+        db_insert('twitter_feed')->fields($fields)->execute();
+      }
     }
+    variable_set('twitter_feed_cron_last_run', $current_time);
+    
   }
 }
 

@@ -53,5 +53,6 @@ function twitter_feed_uninstall() {
   variable_del('twitter_feed_count');
   variable_del('twitter_feed_include_links');
   variable_del('twitter_feed_include_replies');
+  variable_del('twitter_feed_cron_last_run');
   db_drop_table('twitter_feed');
 }
